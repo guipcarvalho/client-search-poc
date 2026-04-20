@@ -1,6 +1,7 @@
-import { AppBar, Box, Container, CssBaseline, Toolbar, Typography } from '@mui/material';
+import { AppBar, Box, Button, Container, CssBaseline, Stack, Toolbar, Typography } from '@mui/material';
 import { ThemeProvider } from '@mui/material/styles';
 import GroupsIcon from '@mui/icons-material/Groups';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { theme } from './theme/theme';
 import { ClientsPage } from './pages/ClientsPage';
 
@@ -15,9 +16,28 @@ function App() {
             <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
               Client Search
             </Typography>
-            <Typography variant="body2" sx={{ opacity: 0.8 }}>
-              .NET 10 · Postgres · Elasticsearch · RabbitMQ
-            </Typography>
+            <Stack direction="row" spacing={1}>
+              <Button
+                color="inherit"
+                size="small"
+                href="http://localhost:15672"
+                target="_blank"
+                rel="noopener noreferrer"
+                endIcon={<OpenInNewIcon fontSize="small" />}
+              >
+                RabbitMQ
+              </Button>
+              <Button
+                color="inherit"
+                size="small"
+                href="http://localhost:5601"
+                target="_blank"
+                rel="noopener noreferrer"
+                endIcon={<OpenInNewIcon fontSize="small" />}
+              >
+                Kibana
+              </Button>
+            </Stack>
           </Toolbar>
         </AppBar>
         <Container maxWidth="lg" disableGutters>
