@@ -58,6 +58,10 @@ services:
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
       - SERVER_PUBLICBASEURL=http://localhost:5601
+      # Required for Fleet / Integrations to load. Must each be >= 32 chars.
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=a7f3c1e9d2b648f5a0c7e4d9b1f8a3c6
+      - XPACK_REPORTING_ENCRYPTIONKEY=b8e4d2f0c3a759b6d1e8f5c0a2b9e4d7
+      - XPACK_SECURITY_ENCRYPTIONKEY=c9f5e3a1d4b860c7e2f9a6d1b3c0f5e8
     ports:
       - "5601:5601"
     networks:
