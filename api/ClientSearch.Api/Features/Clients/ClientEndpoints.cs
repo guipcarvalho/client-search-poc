@@ -2,8 +2,8 @@ using ClientSearch.Api.Domain;
 using ClientSearch.Api.Infrastructure.Database;
 using ClientSearch.Api.Infrastructure.Elasticsearch;
 using ClientSearch.Api.Infrastructure.Messaging;
+using ClientSearch.Api.Infrastructure.Messaging.Outbox;
 using FluentValidation;
-using MassTransit;
 
 namespace ClientSearch.Api.Features.Clients;
 
@@ -23,13 +23,13 @@ public static class ClientEndpoints
             .WithSummary("Fetch a single client by id");
 
         group.MapPost("/", CreateClient)
-            .WithSummary("Create a new client; publishes ClientCreated to RabbitMQ");
+            .WithSummary("Create a new client; enqueues ClientCreated in the transactional outbox");
 
         group.MapPut("/{id:guid}", UpdateClient)
-            .WithSummary("Update a client; publishes ClientUpdated to RabbitMQ");
+            .WithSummary("Update a client; enqueues ClientUpdated in the transactional outbox");
 
         group.MapDelete("/{id:guid}", DeleteClient)
-            .WithSummary("Delete a client; publishes ClientDeleted to RabbitMQ");
+            .WithSummary("Delete a client; enqueues ClientDeleted in the transactional outbox");
 
         return app;
     }
@@ -70,7 +70,8 @@ public static class ClientEndpoints
         CreateClientRequest request,
         IValidator<CreateClientRequest> validator,
         IClientRepository repository,
-        IPublishEndpoint publishEndpoint,
+        IUnitOfWork unitOfWork,
+        IOutboxWriter outbox,
         CancellationToken cancellationToken)
     {
         var validation = await validator.ValidateAsync(request, cancellationToken);
@@ -89,11 +90,13 @@ public static class ClientEndpoints
             CreatedAt = DateTime.UtcNow
         };
 
-        await repository.AddAsync(client, cancellationToken);
-
-        await publishEndpoint.Publish(
-            new ClientCreated(client.Id, client.Name, client.Email, client.Document, client.Phone, client.CreatedAt),
-            cancellationToken);
+        await unitOfWork.ExecuteAsync(async ct =>
+        {
+            await repository.AddAsync(client, ct);
+            await outbox.EnqueueAsync(
+                new ClientCreated(client.Id, client.Name, client.Email, client.Document, client.Phone, client.CreatedAt),
+                ct);
+        }, cancellationToken);
 
         return Results.Created($"/api/clients/{client.Id}", ClientResponse.FromDomain(client));
     }
@@ -103,7 +106,8 @@ public static class ClientEndpoints
         UpdateClientRequest request,
         IValidator<UpdateClientRequest> validator,
         IClientRepository repository,
-        IPublishEndpoint publishEndpoint,
+        IUnitOfWork unitOfWork,
+        IOutboxWriter outbox,
         CancellationToken cancellationToken)
     {
         var validation = await validator.ValidateAsync(request, cancellationToken);
@@ -124,32 +128,44 @@ public static class ClientEndpoints
         existing.Phone = request.Phone;
         existing.UpdatedAt = DateTime.UtcNow;
 
-        var ok = await repository.UpdateAsync(existing, cancellationToken);
-        if (!ok)
+        var updated = await unitOfWork.ExecuteAsync(async ct =>
         {
-            return Results.NotFound();
-        }
+            var ok = await repository.UpdateAsync(existing, ct);
+            if (!ok)
+            {
+                return false;
+            }
 
-        await publishEndpoint.Publish(
-            new ClientUpdated(existing.Id, existing.Name, existing.Email, existing.Document, existing.Phone, existing.UpdatedAt!.Value),
-            cancellationToken);
+            await outbox.EnqueueAsync(
+                new ClientUpdated(existing.Id, existing.Name, existing.Email, existing.Document, existing.Phone, existing.UpdatedAt!.Value),
+                ct);
+            return true;
+        }, cancellationToken);
 
-        return Results.Ok(ClientResponse.FromDomain(existing));
+        return updated
+            ? Results.Ok(ClientResponse.FromDomain(existing))
+            : Results.NotFound();
     }
 
     private static async Task<IResult> DeleteClient(
         Guid id,
         IClientRepository repository,
-        IPublishEndpoint publishEndpoint,
+        IUnitOfWork unitOfWork,
+        IOutboxWriter outbox,
         CancellationToken cancellationToken)
     {
-        var deleted = await repository.DeleteAsync(id, cancellationToken);
-        if (!deleted)
+        var deleted = await unitOfWork.ExecuteAsync(async ct =>
         {
-            return Results.NotFound();
-        }
+            var ok = await repository.DeleteAsync(id, ct);
+            if (!ok)
+            {
+                return false;
+            }
 
-        await publishEndpoint.Publish(new ClientDeleted(id), cancellationToken);
-        return Results.NoContent();
+            await outbox.EnqueueAsync(new ClientDeleted(id), ct);
+            return true;
+        }, cancellationToken);
+
+        return deleted ? Results.NoContent() : Results.NotFound();
     }
 }

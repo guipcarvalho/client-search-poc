@@ -2,6 +2,7 @@ using ClientSearch.Api.Features.Clients;
 using ClientSearch.Api.Infrastructure.Database;
 using ClientSearch.Api.Infrastructure.Elasticsearch;
 using ClientSearch.Api.Infrastructure.Messaging;
+using ClientSearch.Api.Infrastructure.Messaging.Outbox;
 using Elastic.Clients.Elasticsearch;
 using FluentValidation;
 using MassTransit;
@@ -36,8 +37,21 @@ try
     var postgresConnection = builder.Configuration.GetConnectionString("Postgres")
         ?? throw new InvalidOperationException("Missing ConnectionStrings:Postgres");
     builder.Services.AddSingleton<IDbConnectionFactory>(_ => new NpgsqlConnectionFactory(postgresConnection));
+    builder.Services.AddScoped<DbSession>();
+    builder.Services.AddScoped<IDbSession>(sp => sp.GetRequiredService<DbSession>());
+    builder.Services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<DbSession>());
     builder.Services.AddScoped<IClientRepository, ClientRepository>();
     builder.Services.AddSingleton<DatabaseInitializer>();
+
+    builder.Services.Configure<OutboxOptions>(builder.Configuration.GetSection(OutboxOptions.SectionName));
+    builder.Services.AddScoped<IOutboxWriter, OutboxWriter>();
+    builder.Services.AddSingleton(new OutboxMessageTypeRegistry(new[]
+    {
+        typeof(ClientCreated),
+        typeof(ClientUpdated),
+        typeof(ClientDeleted)
+    }));
+    builder.Services.AddHostedService<OutboxDispatcher>();
 
     var elasticUri = builder.Configuration["Elasticsearch:Uri"] ?? "http://localhost:9200";
     builder.Services.AddSingleton(_ =>
