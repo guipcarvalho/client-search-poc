@@ -24,52 +24,56 @@ When a client is created / updated / deleted, the API writes to Postgres and pub
 
 ## Prerequisites
 
-- .NET 10 SDK
-- Node 20+ and npm
-- Docker & Docker Compose
+- Docker & Docker Compose (everything runs in containers)
+- *(Only for local dev)* .NET 10 SDK and Node 20+
 
-## 1. Start the infrastructure
+## Quick start — everything in Docker
 
 ```bash
 cp .env.example .env            # optional — override default creds
-docker compose up -d
+docker compose up -d --build
 ```
 
 Services:
 
-| Service       | URL                                   |
-| ------------- | ------------------------------------- |
-| Postgres      | `localhost:5432` (user/pass: `postgres`) |
-| Elasticsearch | http://localhost:9200                 |
-| Kibana        | http://localhost:5601                 |
-| RabbitMQ AMQP | `localhost:5672`                      |
-| RabbitMQ UI   | http://localhost:15672 (`guest/guest`)|
+| Service       | URL                                       |
+| ------------- | ----------------------------------------- |
+| Web app       | http://localhost:5173                     |
+| API           | http://localhost:5078 (Scalar at `/scalar/v1`) |
+| Postgres      | `localhost:5432` (user/pass: `postgres`)  |
+| Elasticsearch | http://localhost:9200                     |
+| Kibana        | http://localhost:5601                     |
+| RabbitMQ AMQP | `localhost:5672`                          |
+| RabbitMQ UI   | http://localhost:15672 (`guest/guest`)    |
 
-## 2. Run the API
+To rebuild just one service after code changes:
 
 ```bash
-cd api
-dotnet run --project ClientSearch.Api
+docker compose up -d --build api   # or web
 ```
 
-The API listens on http://localhost:5078.
+The API baked into the image points at the in-network hostnames (`postgres`, `elasticsearch`, `rabbitmq`). The web image bakes `VITE_API_BASE_URL` at build time; override it with `VITE_API_BASE_URL=… docker compose build web` if you deploy behind a different hostname.
 
-- OpenAPI spec: http://localhost:5078/openapi/v1.json
-- Scalar API reference: http://localhost:5078/scalar/v1
-- Health: http://localhost:5078/health
+## Local development (without rebuilding images)
 
-On startup it ensures the `clients` table exists in Postgres and the `clients` index exists in Elasticsearch.
-
-## 3. Run the web app
+Start only the infra services and run the API/web on the host:
 
 ```bash
+docker compose up -d postgres elasticsearch kibana rabbitmq
+
+# API
+cd api && dotnet run --project ClientSearch.Api
+# → http://localhost:5078  (Scalar: /scalar/v1, health: /health)
+
+# Web (in another terminal)
 cd web
-cp .env.example .env            # optional — override API base url
-npm install                     # first time only
+cp .env.example .env
+npm install
 npm run dev
+# → http://localhost:5173
 ```
 
-The app runs on http://localhost:5173.
+On startup the API ensures the `clients` table exists in Postgres and the `clients` index exists in Elasticsearch.
 
 ## Project layout
 
